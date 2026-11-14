@@ -30,11 +30,14 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
     private lateinit var btnConnect: Button
     private lateinit var btnStop: Button
     private lateinit var cbRecord: CheckBox
+    private lateinit var cbFilter: CheckBox
 
     private val logLines = ArrayDeque<String>()
     private val seenTypes = HashSet<Int>()
     private var detector: BeatDetector? = null
     private var detectorFs = 0
+    private var filter: EcgFilter? = null
+    private var filterFs = 0
     private var recorder: CsvRecorder? = null
     private var recordWanted = false
     private var leadOff = false
@@ -82,12 +85,19 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
         btnConnect = Button(this).apply { text = "Conectar"; setOnClickListener { startSession() } }
         btnStop = Button(this).apply { text = "Parar"; isEnabled = false; setOnClickListener { stopSession() } }
         cbRecord = CheckBox(this).apply { text = "Gravar CSV"; isChecked = true }
+        cbFilter = CheckBox(this).apply { text = "Filtrar (0,5–40 Hz + 60 Hz)"; isChecked = true }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(btnConnect, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
             addView(btnStop, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(cbRecord, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.2f))
+        }
+
+        val row2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(cbRecord, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(cbFilter, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1.5f))
         }
 
         tvLog = TextView(this).apply { textSize = 10f; typeface = Typeface.MONOSPACE; setTextColor(Color.DKGRAY) }
@@ -101,6 +111,7 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
         root.addView(tvBpm, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(ecgView, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
         root.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        root.addView(row2, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, dp(140)))
         root.addView(disclaimer, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         setContentView(root)
@@ -132,6 +143,7 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
         if (conn.isRunning) return
         ecgView.clear()
         detector = null
+        filter = null
         samples = 0
         leadOff = false
         battery = null
@@ -182,6 +194,7 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
             val upc = di?.uvPerCount ?: (3_000_000.0 / 4096.0 / 200)
             ecgView.setRate(fs)
             if (detector == null || detectorFs != fs) { detector = BeatDetector(fs); detectorFs = fs }
+            if (filter == null || filterFs != fs) { filter = EcgFilter(fs); filterFs = fs }
             if (recordWanted && recorder == null) {
                 val r = CsvRecorder(this, fs)
                 if (r.start()) { recorder = r; log("Gravando ${r.name}") }
@@ -190,16 +203,17 @@ class MainActivity : Activity(), UsbEcgConnection.Callback {
             val now = System.currentTimeMillis()
             for (s in blk.samples) {
                 val uv = (s * upc).toFloat()
-                ecgView.push(uv)
+                val shown = if (cbFilter.isChecked) filter!!.process(uv) else uv
+                ecgView.push(shown)
                 recorder?.add(uv, blk.leadOff, blk.pacemaker)
-                if (!blk.leadOff && detector!!.push(uv)) {
+                if (!blk.leadOff && detector!!.push(shown)) {
                     lastBeatMs = now
                     detector!!.bpm.takeIf { it > 0 }?.let { tvBpm.text = "$it bpm" }
                 }
             }
             samples += blk.samples.size
             if (now - lastBeatMs > 4000) tvBpm.text = "-- bpm"
-            if (blk.leadOff != leadOff) { leadOff = blk.leadOff; if (leadOff) detector?.reset(); updateStatus() }
+            if (blk.leadOff != leadOff) { leadOff = blk.leadOff; if (leadOff) detector?.reset() else filter?.reset(); updateStatus() }
             ecgView.refresh()
             return
         }
