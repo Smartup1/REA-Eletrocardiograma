@@ -2,21 +2,15 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
-
 android {
-    namespace = "com.smartup.snapecgusb"
+    namespace = "com.snapecg.reader"
     compileSdk = 34
-
     defaultConfig {
-        applicationId = "com.smartup.snapecgusb"
-        minSdk = 29
+        applicationId = "com.snapecg.reader"
+        minSdk = 24
         targetSdk = 34
         versionCode = 1
         versionName = "0.1"
-    }
-
-    buildTypes {
-        release { isMinifyEnabled = false }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -24,7 +18,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
-
 dependencies {
-    implementation("com.github.mik3y:usb-serial-for-android:3.8.1")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("com.github.mik3y:usb-serial-for-android:3.8.0")
 }

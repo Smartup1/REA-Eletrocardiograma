@@ -1,12 +1,25 @@
-# SnapEcgUsb
+# SnapECG Reader
 
-App Android (Kotlin, sem Compose) que lê o monitor de ECG SnapECG pelo USB (FTDI FT231X, 115200 8N1).
+App Android que le o monitor de ECG SnapECG por **cabo USB (OTG)**, mostra o ECG ao vivo e a frequencia
+cardiaca, grava em CSV e exporta.
 
-## Como usar
-1. Android Studio (Koala ou mais novo): File > Open > pasta `SnapEcgUsb`. Ele baixa o Gradle 8.7 sozinho.
-2. Ative a depuração USB no celular e rode o app (Run).
-3. Ligue o ECG ao celular com cabo/adaptador OTG. O Android abre o app e pede permissão USB.
-4. Toque em Conectar. O log mostra os primeiros bytes recebidos (`RX[...]`) para diagnóstico.
-5. O CSV (t_s,uv,lead_off,pacemaker) vai para Download/SnapEcgUsb/.
+Protocolo obtido por analise estatica do app oficial (USB = FTDI FT231X 0403:6015, 115200 8N1).
+Nao e dispositivo medico validado: nao use para diagnostico.
 
-Aviso: uso pessoal/experimental, não é dispositivo médico validado.
+## Gerar o APK (sem instalar nada)
+1. Suba esta pasta para o seu repositorio no GitHub (branch `main`).
+   Se existirem `blank.yml` / `main.yml` em `.github/workflows/`, apague-os.
+2. Aba **Actions** -> workflow **Build APK** -> espere ficar verde (ou clique **Run workflow**).
+3. Abra a execucao -> **Artifacts** -> baixe `SnapECG-debug-apk` -> descompacte -> `app-debug.apk`.
+4. Copie para o celular e instale (permita "instalar apps desconhecidos").
+
+## Usar
+Plugue o aparelho no celular com cabo OTG, abra o app e aceite a permissao USB.
+- **Gravar** salva em CSV (continua no arquivo mesmo se o app fechar). **Parar gravacao** fecha o arquivo.
+- **Exportar** abre o compartilhamento do Android com o ultimo CSV.
+- CSV: `t_s,raw,uv_raw,uv_filtrado,eletrodo_solto,marcapasso,qrs`. Linhas `#` sao metadados
+  (`pandas.read_csv("arq.csv", comment="#")`). Arquivos ficam em `Android/data/com.snapecg.reader/files/`.
+
+## Filtro
+mediana de 5 amostras (tira picos/artefatos) -> passa-alta 0,5 Hz -> notch 60 Hz -> passa-baixa 40 Hz.
+Rede eletrica diferente de 60 Hz: ajuste `mains` em `EcgFilter` (Dsp.kt).
