@@ -32,7 +32,7 @@ import java.util.Locale
 private const val ACTION_USB = "com.snapecg.reader.USB_PERMISSION"
 
 /** Grava direto em arquivo CSV (nada fica so na memoria). Comentarios do cabecalho comecam com '#'. */
-class Recorder(val file: File, private val fs: Int, gain: Int, uvPerCount: Double) {
+class Recorder(val file: File, private val fs: Int, gain: Int, uvPerCount: Double, leadType: Int) {
     private val w = BufferedWriter(FileWriter(file))
     private var closed = false
     var samples = 0L
@@ -41,7 +41,7 @@ class Recorder(val file: File, private val fs: Int, gain: Int, uvPerCount: Doubl
 
     init {
         w.write("# SnapECG Reader\n# inicio=${SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())}\n")
-        w.write("# taxa_hz=$fs\n# ganho=$gain\n# uv_por_contagem=$uvPerCount\n")
+        w.write("# taxa_hz=$fs\n# ganho=$gain\n# uv_por_contagem=$uvPerCount\n# tipo_derivacao=$leadType\n")
         w.write("# filtro=mediana5 + passa-alta 0.5 Hz + notch 60 Hz + passa-baixa 40 Hz\n")
         w.write("t_s,raw,uv_raw,uv_filtrado,eletrodo_solto,marcapasso,qrs\n")
     }
@@ -154,7 +154,7 @@ class MainActivity : Activity() {
                 statusTv.text = when {
                     p.leadOff -> "Eletrodo solto - encoste os dedos/eletrodos"
                     r != null -> String.format(Locale.US, "GRAVANDO  %.0f s  (%d amostras)", r.seconds, r.samples)
-                    else -> "${p.info.rateHz} Hz  |  ganho ${p.info.gain}  |  ao vivo"
+                    else -> "${p.info.rateHz} Hz  |  ganho ${p.info.gain}  |  tipo ${p.info.leadType}  |  ao vivo"
                 }
             }
             handler.postDelayed(this, 500)
@@ -239,14 +239,11 @@ class MainActivity : Activity() {
 
     private fun handleSamples(d: ByteArray, n: Int) {
         val p = pipe ?: return
-        val ch = if (p.info.channels > 1 && n % p.info.channels == 0) p.info.channels else 1
-        val pick = if (ch > 1) 1 else 0           // multicanal: mostra o canal 2 (derivacao II) - NAO verificado
         var leadOff = false
         for (k in 0 until n) {
             val hi = d[2 * k].toInt() and 0xFF
             val lo = d[2 * k + 1].toInt() and 0xFF
             if (hi and 0x20 != 0) leadOff = true
-            if (k % ch != pick) continue
             val raw = (((hi and 0x1F) shl 7) or (lo and 0x7F)) - 2048
             val uv = raw * p.info.uvPerCount
             val y = p.filter.process(uv)
@@ -267,7 +264,7 @@ class MainActivity : Activity() {
         val p = pipe ?: return
         val dir = getExternalFilesDir(null) ?: filesDir
         val name = "ecg_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".csv"
-        recorder = Recorder(File(dir, name), p.info.rateHz, p.info.gain, p.info.uvPerCount)
+        recorder = Recorder(File(dir, name), p.info.rateHz, p.info.gain, p.info.uvPerCount, p.info.leadType)
         btnRec.text = "Parar gravacao"
         btnShare.isEnabled = false
     }

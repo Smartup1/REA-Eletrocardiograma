@@ -62,23 +62,25 @@ class EcgFilter(private val fs: Int, mains: Double = 60.0) {
 }
 
 /**
- * Detector de QRS simplificado: derivada -> quadrado -> janela movel -> limiar adaptativo.
- * O limiar e limitado (um artefato nao o "estoura") e desce sozinho se ficar 1,5 s sem batimento.
+ * Detector de QRS (estilo Pan-Tompkins): banda 5-15 Hz -> derivada -> quadrado -> janela movel
+ * -> limiar adaptativo limitado. Rejeita onda T/ruido que cai logo depois de um batimento.
  * Aprende o nivel do sinal nos primeiros 4 s (2 s de aquecimento do filtro + 2 s).
  */
 class QrsDetector(private val fs: Int) {
-    private val win = maxOf(3, (0.12 * fs).toInt())
+    private val bpHigh = Biquad.highpass(fs.toDouble(), 5.0)
+    private val bpLow = Biquad.lowpass(fs.toDouble(), 15.0)
+    private val win = maxOf(3, (0.15 * fs).toInt())
     private val buf = DoubleArray(win)
     private var bi = 0
     private var sum = 0.0
-    private var p1 = 0.0
-    private var p2 = 0.0
+    private var prev = 0.0
     private var m1 = 0.0
     private var m2 = 0.0
     private var spki = 0.0
+    private var lastPeak = 0.0
     private var learn = 0
     private val decay = 0.5.pow(1.0 / (2.0 * fs))
-    private val refractory = (0.25 * fs).toInt()
+    private val refractory = (0.3 * fs).toInt()
     private var since = Int.MAX_VALUE / 2
     private val rr = DoubleArray(5)
     private var rrN = 0
@@ -86,8 +88,9 @@ class QrsDetector(private val fs: Int) {
 
     /** Devolve true quando um batimento foi detectado. */
     fun push(x: Double): Boolean {
-        val d = x - p2
-        p2 = p1; p1 = x
+        val b = bpLow.process(bpHigh.process(x))
+        val d = b - prev
+        prev = b
         val sq = d * d
         sum += sq - buf[bi]; buf[bi] = sq; bi = (bi + 1) % win
         val m = sum / win
@@ -98,17 +101,20 @@ class QrsDetector(private val fs: Int) {
         } else if (since > 1.5 * fs) {
             spki *= decay
         }
-        if (learn >= 4 * fs && m1 > 0.35 * spki && m1 >= m2 && m1 > m && spki > 2500.0 && since > refractory) {
-            beat = true
+        if (learn >= 4 * fs && m1 > 0.35 * spki && m1 >= m2 && m1 > m && spki > 300.0 && since > refractory) {
             val ms = since * 1000.0 / fs
-            if (ms in 300.0..2000.0) {
-                rr[rrN % rr.size] = ms; rrN++
-                val k = minOf(rrN, rr.size)
-                val s = rr.copyOf(k).sorted()
-                bpm = (60000.0 / s[k / 2]).toInt()
+            if (!(ms < 360.0 && m1 < 0.6 * lastPeak)) {      // perto demais e fraco = onda T / ruido
+                beat = true
+                if (ms in 300.0..2000.0) {
+                    rr[rrN % rr.size] = ms; rrN++
+                    val k = minOf(rrN, rr.size)
+                    val sorted = rr.copyOf(k).sorted()
+                    bpm = (60000.0 / sorted[k / 2]).toInt()
+                }
+                lastPeak = m1
+                spki = 0.875 * spki + 0.125 * minOf(m1, 2 * spki)
+                since = 0
             }
-            spki = 0.875 * spki + 0.125 * minOf(m1, 2 * spki)
-            since = 0
         }
         m2 = m1; m1 = m
         return beat

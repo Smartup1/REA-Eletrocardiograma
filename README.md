@@ -23,3 +23,8 @@ Plugue o aparelho no celular com cabo OTG, abra o app e aceite a permissao USB.
 ## Filtro
 mediana de 5 amostras (tira picos/artefatos) -> passa-alta 0,5 Hz -> notch 60 Hz -> passa-baixa 40 Hz.
 Rede eletrica diferente de 60 Hz: ajuste `mains` em `EcgFilter` (Dsp.kt).
+
+## Escala do grafico
+Papel de ECG calibrado pelo DPI real da tela: **25 mm/s e 10 mm/mV** (grade de 1 mm e 5 mm).
+Toque no grafico muda o ganho (5/10/20 mm/mV); toque longo muda a velocidade (12,5/25/50 mm/s).
+Em retrato cabem ~2,5 s a 25 mm/s: gire o celular ou use 12,5 mm/s para ver mais batimentos.
